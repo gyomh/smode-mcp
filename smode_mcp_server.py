@@ -5,7 +5,10 @@ import json
 import urllib.error
 import urllib.request
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP  # mcp SDK v1
+except ModuleNotFoundError:
+    from mcp.server.mcpserver import MCPServer as FastMCP  # mcp SDK v2
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
