@@ -58,12 +58,12 @@ pip install mcp
 ```
 
 **Côté Smode** :
-1. Crée un objet **Script** dans un projet Smode (peu importe la scène/compo).
-2. Colle le contenu de `smode_bridge.py` dedans.
-3. Change son **Launch Mode en "At Every Update"** (obligatoire, voir plus haut).
-4. Compile. La console doit afficher `[smode_bridge] demarre sur 127.0.0.1:8891`.
+1. Créez un objet **Script** dans un projet Smode (peu importe la scène/compo).
+2. Collez-y le contenu de `smode_bridge.py`.
+3. Changez son **Launch Mode en "At Every Update"** (obligatoire, voir plus haut).
+4. Compilez. La console doit afficher `[smode_bridge] demarre sur 127.0.0.1:8891`.
 
-**Côté Claude** (Claude Code ou Claude Desktop) : ajoute une entrée dans la config
+**Côté Claude** (Claude Code ou Claude Desktop) : ajoutez une entrée dans la config
 MCP (`.mcp.json` pour Claude Code, `claude_desktop_config.json` pour Claude Desktop) :
 
 ```json
@@ -77,7 +77,80 @@ MCP (`.mcp.json` pour Claude Code, `claude_desktop_config.json` pour Claude Desk
 }
 ```
 
-Redémarre Claude, l'outil `smode_execute` doit apparaître.
+Redémarrez Claude : l'outil `smode_execute` doit apparaître.
+
+## Déclencher vos propres Scripts depuis un bouton (Stream Deck, Chataigne, tout client HTTP)
+
+Le pont ne sert pas qu'au LLM : il peut aussi lancer des Scripts Smode que vous avez
+préparés, depuis n'importe quoi capable d'envoyer une requête HTTP.
+
+**Slots.** Le Script du pont expose 8 slots (`slot1` … `slot8`). Glissez-y d'autres
+Scripts Smode (un Script déposé dans un slot est automatiquement forcé en Launch Mode
+= **Manual**, il ne tourne donc que lorsqu'on le déclenche). Envoyez ensuite un payload
+court :
+
+| Payload (`code`)            | Effet                                                        |
+|-----------------------------|--------------------------------------------------------------|
+| `run_script("mon_script")`  | Lance le Script nommé `mon_script` présent dans un des slots |
+| `run_slot(1)`               | Lance le Script du `slot1`                                   |
+| `list_slots()`              | Renvoie le contenu de chaque slot                            |
+
+Le payload peut être envoyé en JSON (`{"code": "run_script('mon_script')"}`), en
+form-urlencoded (`code=run_script("mon_script")` — ce qu'envoie le module HTTP de
+Chataigne), ou en query string `?code=`, sur `POST http://127.0.0.1:8891`.
+Exemple : un Script « nouvelle scène » qui crée une Scene prête à l'emploi, déclenché
+par un bouton Stream Deck via Chataigne.
+
+### Réglage de Smode
+
+![Paramètres du Script smode_bridge dans Smode](docs/smode-bridge-parameters.png)
+
+Dans le panneau **Parameters** du Script `smode_bridge` :
+- **Launch Mode** doit rester sur **At Every Update**.
+- **Port** doit correspondre à l'adresse saisie dans Chataigne (8891 par défaut).
+- **Slot 1** à **Slot 8** reçoivent les Scripts à déclencher (glissez-les depuis le
+  navigateur de Smode, ou choisissez-les dans le menu). Ici, `nouvelle_scene` est dans le
+  slot 1 et `uniforms_timeline` dans le slot 2 : `run_script("nouvelle_scene")` ou
+  `run_slot(1)` lance le premier, `run_slot(2)` le second.
+- **Restart Server** : voir plus bas.
+
+### Réglage de Chataigne
+
+![Module HTTP et consequence dans Chataigne](docs/chataigne-http-module.png)
+
+1. Ajoutez un module **HTTP** et réglez sa **Base Address** sur `http://127.0.0.1:8891`
+   (le port du paramètre `port` du Script bridge).
+2. Créez une consequence **HTTP > Request** avec **Method** = `POST` et **Address** = `/`.
+3. Dans **Arguments**, ajoutez un argument nommé `code` dont la valeur est le payload,
+   par exemple `run_script("mon_script")` ou `run_slot(1)`.
+4. Reliez cette consequence à une condition (par exemple l'appui sur un bouton Stream
+   Deck). Le bouton **Trigger** du *Command Tester* permet de la tester sans le Stream Deck.
+
+Deux façons de désigner le Script à lancer, au choix dans l'argument `code` :
+
+- `run_slot(1)` : par numéro de slot (première capture ci-dessus). Simple, mais il faut
+  penser à le modifier si vous réorganisez les slots.
+- `run_script("nouvelle_scene")` : par nom de Script (capture ci-dessous). Plus lisible, et
+  insensible à l'ordre des slots. C'est la méthode conseillée.
+
+![Consequence Chataigne avec run_script](docs/chataigne-run-script.png)
+
+**Case `restartServer`.** Smode garde le namespace Python d'un Script en vie d'un
+recollage à l'autre : après une mise à jour de `smode_bridge.py`, le serveur HTTP
+conserverait donc son *ancien* gestionnaire de requêtes, et les fonctions retirées du
+code resteraient appelables jusqu'au redémarrage de Smode. Cocher `restartServer` (elle
+se décoche toute seule) purge les fonctions qui ne sont plus dans le source et relance
+le serveur HTTP avec le gestionnaire actuel. Effet de bord : les fonctions définies à la
+volée via `smode_execute` sont aussi purgées.
+
+**Pièges appris à la dure**
+- Une exception non rattrapée dans un Script « At Every Update » l'arrête complètement :
+  le pont répond alors `504` à toutes les requêtes. Entourez tout code exécuté à chaque
+  frame d'un `try/except`.
+- `getUniqueIdentifier()` est inutilisable depuis Python (`juce::Uuid` non convertible) :
+  il lève un `TypeError`.
+- Un Script placé dans un slot se lance avec `tool.execute.trig()` (`execute` est un
+  objet `Trigger`, pas un appelable).
 
 ## ⚠️ Sécurité — à lire avant d'utiliser
 
@@ -86,10 +159,10 @@ HTTP, sans authentification. Le serveur n'écoute que sur `127.0.0.1` (donc pas
 accessible depuis le réseau), mais **n'importe quel processus tournant sur la même
 machine** peut envoyer des requêtes à ce port pendant qu'il tourne.
 
-- Ne laisse pas ce pont actif sur une machine partagée ou exposée.
+- Ne laissez pas ce pont actif sur une machine partagée ou exposée.
 - C'est un outil de bricolage/exploration personnelle, pas quelque chose à utiliser
   tel quel en contexte de spectacle/production sans y réfléchir à deux fois.
-- Si tu veux une surface plus restreinte, remplace `smode_execute(code)` par des
+- Si vous voulez une surface plus restreinte, remplacez `smode_execute(code)` par des
   outils MCP dédiés et limités (ex: `list_scene()`, `create_layer(type)`,
   `set_parameter(path, value)`) plutôt que de l'exécution de code libre.
 
