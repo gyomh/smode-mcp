@@ -92,16 +92,12 @@ Restart the client — the `smode_execute` tool should show up.
 The bridge isn't only for the LLM: it can also launch Smode Scripts you've
 prepared, from anything able to send an HTTP request.
 
-**Slots.** The bridge Script exposes 8 slots (`slot1` … `slot8`). Drag other
-Smode Scripts into them (a Script dropped in a slot is automatically forced to
-Launch Mode = **Manual**, so it only runs when triggered). Then send a short
-payload:
+Put the Script to trigger in the project (Launch Mode = **Manual**, so it only
+runs when triggered), then send a short payload:
 
-| Payload (`code`)            | Effect                                                     |
-|-----------------------------|------------------------------------------------------------|
-| `run_script("my_script")`   | Runs the Script named `my_script` found in one of the slots |
-| `run_slot(1)`               | Runs the Script sitting in `slot1`                          |
-| `list_slots()`              | Returns what each slot contains                             |
+| Payload (`code`)            | Effect                                             |
+|-----------------------------|----------------------------------------------------|
+| `run_script("my_script")`   | Runs the project's Script named `my_script`        |
 
 The payload can be sent as JSON (`{"code": "run_script('my_script')"}`), as a
 form-urlencoded body (`code=run_script("my_script")` — what Chataigne's HTTP
@@ -111,35 +107,20 @@ Deck button through Chataigne.
 
 ### Smode setup
 
-![smode_bridge Script parameters in Smode](docs/smode-bridge-parameters.png)
-
 In the **Parameters** panel of the `smode_bridge` Script:
 - **Launch Mode** must stay on **At Every Update**.
 - **Port** must match the address entered in Chataigne (8891 by default).
-- **Slot 1** to **Slot 8** hold the Scripts to trigger (drag them from Smode's
-  browser, or pick them from the menu). Here `nouvelle_scene` is in slot 1 and
-  `uniforms_timeline` in slot 2: `run_script("nouvelle_scene")` or `run_slot(1)`
-  runs the first, `run_slot(2)` the second.
 - **Restart Server**: see below.
 
 ### Chataigne setup
-
-![HTTP module and consequence in Chataigne](docs/chataigne-http-module.png)
 
 1. Add an **HTTP** module and set its **Base Address** to `http://127.0.0.1:8891`
    (the port from the bridge Script's `port` parameter).
 2. Create an **HTTP > Request** consequence with **Method** = `POST` and **Address** = `/`.
 3. Under **Arguments**, add an argument named `code` whose value is the payload, for
-   example `run_script("my_script")` or `run_slot(1)`.
+   example `run_script("nouvelle_scene")` (the Script's name in Smode).
 4. Wire that consequence to a condition (for example a Stream Deck button press). The
    **Trigger** button of the *Command Tester* lets you test it without the Stream Deck.
-
-Two ways to designate the Script to run, in the `code` argument:
-
-- `run_slot(1)`: by slot number (first screenshot above). Simple, but you have to update it
-  if you reorganize the slots.
-- `run_script("nouvelle_scene")`: by Script name (screenshot below). More readable, and
-  independent of slot order. This is the recommended method.
 
 ![Chataigne consequence using run_script](docs/chataigne-run-script.png)
 
@@ -149,7 +130,8 @@ keep its *old* request handler, and functions you removed from the code would
 stay callable until Smode is restarted. Ticking `restartServer` (it un-ticks
 itself) purges the functions no longer present in the source and restarts the
 HTTP server with the current handler. Side effect: functions defined on the
-fly through `smode_execute` are purged too.
+fly through `smode_execute` are purged too. The namespace is shared by all the
+Scripts of the project: the functions of the other Scripts are left alone.
 
 **Pitfalls learned the hard way**
 - An uncaught exception in an "At Every Update" Script stops it entirely: the
@@ -157,8 +139,12 @@ fly through `smode_execute` are purged too.
   `try/except`.
 - `getUniqueIdentifier()` can't be used from Python (`juce::Uuid` isn't
   convertible) — it raises a `TypeError`.
-- A Script in a slot is launched with `tool.execute.trig()` (`execute` is a
-  `Trigger` object, not a callable).
+- A Script is launched with `tool.execute.trig()` (`execute` is a `Trigger`
+  object, not a callable).
+- Smode reads, compiles and rewrites (`unparse`) the whole text of a Script on
+  each run, so on every frame in "At Every Update", and creates its parameters
+  again: the bridge keeps its code in a string run once and has only 2
+  parameters (9.4 ms per frame before, about 0.6 ms like this).
 
 ## ⚠️ Security — read before use
 
