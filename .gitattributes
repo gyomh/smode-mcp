@@ -1,0 +1,5 @@
+# Line endings: LF in the repository and in the working copy (Python, SMODE and every editor read it);
+# .bat / .cmd stay CRLF on disk (cmd.exe needs it). Git converts what a tool writes otherwise.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
